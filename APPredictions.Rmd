@@ -1,0 +1,187 @@
+---
+title: "Prediction of unilateral dumbbell biceps curl classifications from inertial monitor readings"
+author: "Jeremy Roscoe"
+date: "November 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+A dataset containing observations from a study of 6 participants completing 5 classifications of unilateral dumbbell biceps curl is used to train a predictive model in *R* for classifying an assessment set of 20 observations of the same activities. The training data is split into training, testing and validating subsets. It is then cleaned to remove variables that are not raw measurements from the inertial units or time based observation window descriptors. Models are then trained on the training subset and tested on the testing subset, comparing accuracies. A boosting model was adjusted and then the selected models are then validated on the validating subset to provide cross validation and a further estimate of the out of sample error rate. The final adjusted Generalized Boosted Model was found to have an estimated out of sample accuracy of ~99.36% providing approximately an 88% probability of 100% success in the classification of the assessment observations.
+
+## Data Source
+
+The data for this analysis is based on sensor readings from inertial measurement units on the belt, forearm, arm, and dumbbell of 6 participants completing 5 different classifications of unilateral dumbbell biceps curl. The 5 *classe* classifications refer to the "correct" methodology for the exercise and 4 common mistakes:
+
+  * Exactly according to the specification (Class A)  
+  * Throwing the elbows to the front (Class B)  
+  * Lifting the dumbbell only halfway (Class C)  
+  * Lowering the dumbbell only halfway (Class D)  
+  * Throwing the hips to the front (Class E)  
+  
+This data is intended to mimic the data that is potentially available from quantified self movement devices such as the Fitbit, Jawbone Up, and Nike FuelBand. The study comes from the [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har) website, particularly the Weight Lifting Exercises section which draws from the [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf) paper by Velloso,E et al (2013).  
+The data for training and cross validation, contains the classifying "classe" variable and is sourced [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv). The [dataset](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) on which the predictive models will be assessed is absent the "classe" variable and contains 20 observations, meaning that the predictive model will need to have very high predictive power to ensure accuracy on all of the testing set.
+```{r loading, message=FALSE}
+library(caret)
+rawdat  <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+assessdat <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+## Data Cleaning and Exploratory Analysis
+
+For reproducibility the seed is set and the raw data is partitioned into an initial training (*trainInit*) and *validating* set. Whilst the *validating* subset will remain untouched until a final validation of the models, the initial training set will be further partitioned in a 75:25 split to give *training* and *testing* subsets; providing an ultimate split of 60:20:20 between the subsets.
+```{r Dim}
+dim(rawdat)
+sum(is.na(rawdat))
+```
+
+```{r Clean}
+set.seed(9482)
+inTrain <- createDataPartition(y=rawdat$classe, p=0.80, list=FALSE)
+trainInit <- rawdat[inTrain,]
+validating <- rawdat[-inTrain,]
+inTrain2 <- createDataPartition(y=trainInit$classe, p=0.75, list=FALSE)
+training <- trainInit[inTrain2,]
+testing <- trainInit[-inTrain2,]
+
+```
+
+The raw data has a very large number of NA values. A closer look at the structure and setup of the raw data (Appended Table.1), shows 100 of the 160 variables either have NA, "#DIV/0!" or blank values occurring for at least 97.93% of the observations. The variable names for these indicate the reasoning: they are data summary parameters. A quick look at the assessment data set shows summary parameters are not included and so using them for building a predictive model for the test data set would be erroneous. The variables denoting time, window and "X" will also be discounted as they are descriptors for the observation window as opposed to descriptors of the observed data. Using these would create an accurate classifying algorithm though ultimately it would be useless for classification based on data sourced outside of the experiment, which is the ultimate aim. 
+```{r bad}
+badindices <- grepl("^kurtosis|^skewness|^max|^min|^amplitude|^var|^avg|^stddev|^X|time|window", names(rawdat))
+training <- training[,!badindices]
+sum(is.na(training))+sum(training %in% c("","#DIV/0!"))
+testing <- testing[,!badindices]
+validating <- validating[,!badindices]
+```
+
+The training, testing and validating data sets have now been discounted to only include the observed data measurements rather than distribution summary statistics or subject descriptors and no non-number values are present.  
+
+## Predictive Modelling
+
+Due to time expensive nature of the machine learning techniques used, parallel processing will be engaged to improve performance. The parallel processing will involve cross validation with 10 iterations for each model based on the *training* data subset. Each model will use a different method through the caret `train` function:  
+
+  * The first model, *mod1*, will use recursive partitioning and regression trees (`rpart`).  
+  * The second, *mod2*, will use treebagging (`treebag`).  
+  * The third, *mod3*, will use random forests (`rf`).  
+  * The fourth, *mod4*, will use boosting (`gbm`).  
+  
+The models will then be used to make predictions on the *testing* dataset and out of sample accuracy noted. Models will then be selected based on their accuracy on the testing set and a final model generated. The final model will then be tested once on the *validating* set to get an estimate of the out of sample accuracy.
+```{r models, message=FALSE, cache=TRUE}
+library(parallel); library(doParallel); library(plyr); library(e1071);
+library(rpart); library(randomForest); library(gbm);
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
+fitcon <- trainControl(method="cv", number = 10, allowParallel = TRUE )
+set.seed(9482)
+mod1 <- train(classe~.,method="rpart", data = training, trControl = fitcon)
+set.seed(9482)
+mod2 <- train(classe~., method = "treebag", data=training, trControl = fitcon)
+stopCluster(cl)
+registerDoSEQ()
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
+set.seed(9482)
+mod3 <- train(classe~., method="rf", data=training, prox=TRUE, 
+              trControl = fitcon)
+stopCluster(cl)
+registerDoSEQ()
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
+set.seed(9482)
+mod4 <- train(classe~., method="gbm", data=training, verbose=FALSE, 
+              trControl = fitcon)
+stopCluster(cl)
+registerDoSEQ()
+```
+
+## Diagnostic Error Analysis
+
+Running predictions based on the data used to create the models provides a generally optimistic estimate of the out of sample accuracy. Using the `confusionMatrix` function, the accuracy of out of sample predictions can be established (Appended Table.2). This shows that the recursive partitioning model, *mod1*, gave poor results in all testing scenarios. Looking at the final model shows why:
+```{r mod1}
+mod1$finalModel
+```
+There are no terminal nodes resulting in a "D" classification. Also, other than nodes 3 and 4, there are no "definitive" classifications at the terminal nodes. The recursive partitioning model will not be used any further for analysis.  
+Looking at the accuracies for the boosting model, *mod4*, it appears as though there could be room for improvement as boosting methods are usually comparable to random forests in their power. (Appended Figure.1) shows an increase in accuracy as boosting iterations and tree depth increases. A new boosting model is created with an expanded grid; incorporating higher boosting iterations, maximum tree depths and a range of shrinkage levels:
+```{r mod5, cache=TRUE}
+gbmGrid <- expand.grid(interaction.depth = c(3,6,9,12), n.trees = c(3:6)*50, 
+                       shrinkage = seq(0.09,0.11,0.005), n.minobsinnode=10)
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
+set.seed(9482)
+mod5 <- train(classe~., method="gbm", data=training, verbose=FALSE, 
+              tuneGrid = gbmGrid, trControl = fitcon)
+stopCluster(cl)
+registerDoSEQ()
+
+```
+A plot of the accuracies for the variants in *mod5* (Appended Figure.2), shows the greatest accuracy occurring with 300 iterations, an interactive depth of 12, and a shrinkage value of 0.110. It also shows that at this level the potential improvement from adjusting parameters from their current values is negligible. A look at the in and out of sample accuracies gives: 
+```{r Accuracy, message=FALSE}
+Acc <- function(mod=mod1){
+    a <- pred <- predV <- NULL
+    pred <- predict(mod, newdata = testing)
+    predV <- predict(mod, newdata = validating)
+    a[[1]] <- max(mod$results["Accuracy"])
+    a[[2]] <- confusionMatrix(pred, testing$classe)$overall[[1]]
+    a[[3]] <- confusionMatrix(predV, validating$classe)$overall[[1]]
+    a[[4]] <- (a[[2]]+a[[3]])/2
+    names(a) <- c("In Sample", "Testing", "Validating", "Mean O.O.S.")
+    a
+} 
+Acc(mod5)
+```
+This provides the highest accuracy rate of all the models and will be used for predictions on the final assessment. A quick comparison of the predicted classifications of the assessment data from the better models gives:
+```{r assesscomparison, message=FALSE}
+assess2 <- predict(mod2, newdata = assessdat)
+assess3 <- predict(mod3, newdata = assessdat)
+assess4 <- predict(mod4, newdata = assessdat)
+assess5 <- predict(mod5, newdata = assessdat)
+identical(assess2,assess3,assess4,assess5)
+```
+All four of the non-rejected models are in agreement as to the classifications for the assessment data set giving further certainty to the predictive accuracy of the adjusted boosting model, *mod5*, on the assessment dataset. Averaging the out of sample accuracies of *mod5* gives an estimate of 0.9936% accuracy, which would give an 88% probability that all 20 of the assessment data predictions are correct.
+
+## Appendices
+
+**Table.1** Raw Data variable structures
+```{r tab1}
+b <- data.frame(NULL)
+for(i in 1:160){
+    b[i,1] <- names(rawdat)[i]
+    b[i,2] <- length(levels(as.factor(rawdat[,i])))
+    b[i,3] <- class(rawdat[,i])
+    b[i,4] <- 100*(sum(is.na(rawdat[,i]))+ sum(rawdat[,i] %in% 
+                                                  c("","#DIV/0!")))/19622
+}
+names(b) <- c("variable", "levels", "class", "%NAN"); b
+```
+
+**Table.2** Model Accuracy Comparisons
+```{r tab2, message=FALSE}
+AccCompare <- data.frame(NULL)
+for(i in 1:4){
+    AccCompare[i,1] <- c("mod1","mod2","mod3","mod4")[i]
+    }
+for(i in 1:4){
+    AccCompare[1,(i+1)] <- Acc(mod1)[i]
+    AccCompare[2,(i+1)] <- Acc(mod2)[i]
+    AccCompare[3,(i+1)] <- Acc(mod3)[i]
+    AccCompare[4,(i+1)] <- Acc(mod4)[i]
+    }
+names(AccCompare) <- c("Model","In Sample","Testing","Validating","Mean O.O.S.")
+AccCompare
+```
+
+**Figure.1** Boosting model (mod4) Accuracy plot
+```{r Figure1}
+library(lattice)
+plot(mod4)
+```
+
+**Figure.2** Adjusted Boosting model (mod5) Accuracy plot
+```{r Figure2}
+plot(mod5)
+```
