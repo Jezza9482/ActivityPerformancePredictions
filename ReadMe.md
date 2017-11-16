@@ -4,7 +4,7 @@ By Jeremy Roscoe Nov 2017
 
   * Note that all code was written and run on a Macbook Pro using a 2.4GHz Intel Core i7 processor with R version 3.3.3 (2017-03-06) on a x86_64-apple-darwin13.4.0 platform using macOS Sierra version 10.12.6.  
   * All code used to create the report is present within the report including the relevant links to source data sets and studies.  
-  * To view the completed HTML page of the report click [this link](http://htmlpreview.github.com/?https://github.com/Jezza9482/ActivityPerformancePredictions/APPredictions.html)  
+  * To view the completed HTML page of the report click [this link](http://htmlpreview.github.com/?https://raw.githubusercontent.com/Jezza9482/ActivityPerformancePredictions/master/APPredictions.html)  
   
 #### Variables created:
 

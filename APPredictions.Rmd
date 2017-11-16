@@ -71,7 +71,7 @@ Due to time expensive nature of the machine learning techniques used, parallel p
   * The fourth, *mod4*, will use boosting (`gbm`).  
   
 The models will then be used to make predictions on the *testing* dataset and out of sample accuracy noted. Models will then be selected based on their accuracy on the testing set and a final model generated. The final model will then be tested once on the *validating* set to get an estimate of the out of sample accuracy.
-```{r models, message=FALSE, cache=TRUE}
+```{r models1, message=FALSE, cache=TRUE}
 library(parallel); library(doParallel); library(plyr); library(e1071);
 library(rpart); library(randomForest); library(gbm);
 cl <- makeCluster(detectCores() - 1)
@@ -79,10 +79,19 @@ registerDoParallel(cl)
 fitcon <- trainControl(method="cv", number = 10, allowParallel = TRUE )
 set.seed(9482)
 mod1 <- train(classe~.,method="rpart", data = training, trControl = fitcon)
+stopCluster(cl)
+registerDoSEQ()
+```
+```{r models2, message=FALSE}
+library(parallel); library(doParallel);
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
 set.seed(9482)
 mod2 <- train(classe~., method = "treebag", data=training, trControl = fitcon)
 stopCluster(cl)
 registerDoSEQ()
+```
+```{r models3, message=FALSE, cache=TRUE}
 cl <- makeCluster(detectCores() - 1)
 registerDoParallel(cl)
 set.seed(9482)
@@ -90,6 +99,8 @@ mod3 <- train(classe~., method="rf", data=training, prox=TRUE,
               trControl = fitcon)
 stopCluster(cl)
 registerDoSEQ()
+```
+```{r models4, message=FALSE, cache=TRUE}
 cl <- makeCluster(detectCores() - 1)
 registerDoParallel(cl)
 set.seed(9482)

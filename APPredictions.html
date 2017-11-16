@@ -190,18 +190,23 @@ registerDoParallel(cl)
 fitcon &lt;- trainControl(method=&quot;cv&quot;, number = 10, allowParallel = TRUE )
 set.seed(9482)
 mod1 &lt;- train(classe~.,method=&quot;rpart&quot;, data = training, trControl = fitcon)
+stopCluster(cl)
+registerDoSEQ()</code></pre>
+<pre class="r"><code>library(parallel); library(doParallel);
+cl &lt;- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
 set.seed(9482)
 mod2 &lt;- train(classe~., method = &quot;treebag&quot;, data=training, trControl = fitcon)
 stopCluster(cl)
-registerDoSEQ()
-cl &lt;- makeCluster(detectCores() - 1)
+registerDoSEQ()</code></pre>
+<pre class="r"><code>cl &lt;- makeCluster(detectCores() - 1)
 registerDoParallel(cl)
 set.seed(9482)
 mod3 &lt;- train(classe~., method=&quot;rf&quot;, data=training, prox=TRUE, 
               trControl = fitcon)
 stopCluster(cl)
-registerDoSEQ()
-cl &lt;- makeCluster(detectCores() - 1)
+registerDoSEQ()</code></pre>
+<pre class="r"><code>cl &lt;- makeCluster(detectCores() - 1)
 registerDoParallel(cl)
 set.seed(9482)
 mod4 &lt;- train(classe~., method=&quot;gbm&quot;, data=training, verbose=FALSE, 
